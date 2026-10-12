@@ -4,87 +4,196 @@ export interface Env {
   GEMINI_API_KEY: string;
 }
 
-function resolveApiModelId(requestedModel?: string): string {
-  if (!requestedModel) return 'gemini-2.5-flash';
-  const clean = requestedModel.toLowerCase();
-  if (clean.includes('pro')) return 'gemini-2.5-pro';
-  if (clean.includes('2.0')) return 'gemini-2.0-flash';
-  if (clean.includes('1.5')) return 'gemini-1.5-flash';
-  if (clean.includes('flash-8b')) return 'gemini-1.5-flash-8b';
-  return 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+
+function resolveApiModelId(requestedModel?: unknown): string {
+  if (typeof requestedModel !== 'string' || !requestedModel.trim()) {
+    return DEFAULT_MODEL;
+  }
+
+  const clean = requestedModel.trim().toLowerCase();
+
+  // Accept explicit Gemini model IDs.
+  if (/^gemini-[a-z0-9.-]+$/.test(clean)) {
+    return clean;
+  }
+
+  // Map model names shown in the app's selector.
+  if (clean.includes('3.8')) return 'gemini-3.8-flash';
+  if (clean.includes('3.7')) return 'gemini-3.7-flash';
+  if (clean.includes('3.6')) return 'gemini-3.6-flash';
+  if (clean.includes('3.5') && clean.includes('lite')) {
+    return 'gemini-3.5-flash-lite';
+  }
+  if (clean.includes('3.5') && clean.includes('pro')) {
+    return 'gemini-3.5-pro';
+  }
+  if (clean.includes('3.5')) return 'gemini-3.5-flash';
+  if (clean.includes('3.1')) return 'gemini-3.1-flash-lite';
+
+  throw new Error(`Unsupported Gemini model selection: ${requestedModel}`);
 }
 
-async function callGeminiWithRetryAndFallback(
-  ai: GoogleGenAI,
-  primaryModel: string,
-  fn: (model: string) => Promise<any>
-): Promise<any> {
-  const modelsToTry = Array.from(
-    new Set([primaryModel, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'])
+function getErrorStatus(error: any): number {
+  const candidate = Number(
+    error?.status ?? error?.code ?? error?.response?.status
   );
-  let lastErr: any;
 
-  for (const model of modelsToTry) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        return await fn(model);
-      } catch (err: any) {
-        lastErr = err;
-        const msg = String(err?.message || '').toLowerCase();
-        const isUnavailable =
-          msg.includes('503') ||
-          msg.includes('429') ||
-          msg.includes('unavailable') ||
-          msg.includes('high demand') ||
-          msg.includes('overloaded') ||
-          msg.includes('not found') ||
-          msg.includes('404');
-        if (!isUnavailable) {
-          throw err;
-        }
-        await new Promise((res) => setTimeout(res, (attempt + 1) * 1000));
+  if (Number.isInteger(candidate) && candidate >= 400 && candidate <= 599) {
+    return candidate;
+  }
+
+  const message = String(error?.message ?? error ?? '');
+  const match = message.match(
+    /\b(400|401|403|404|408|413|429|500|502|503|504)\b/
+  );
+
+  return match ? Number(match[1]) : 500;
+}
+
+function getErrorMessage(error: any): string {
+  if (typeof error?.message === 'string' && error.message.trim()) {
+    return error.message;
+  }
+
+  if (typeof error === 'string') return error;
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Unknown Gemini API error';
+  }
+}
+
+function isRetryable(error: any): boolean {
+  const status = getErrorStatus(error);
+  const message = getErrorMessage(error).toLowerCase();
+
+  return (
+    [408, 429, 500, 502, 503, 504].includes(status) ||
+    message.includes('temporarily unavailable') ||
+    message.includes('high demand') ||
+    message.includes('overloaded')
+  );
+}
+
+async function generateWithRetry(
+  ai: GoogleGenAI,
+  params: Parameters<typeof ai.models.generateContent>[0],
+  attempts = 3
+): Promise<any> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (error) {
+      if (!isRetryable(error) || attempt >= attempts - 1) {
+        throw error;
       }
+
+      const delay =
+        Math.min(1000 * 2 ** attempt, 4000) +
+        Math.floor(Math.random() * 250);
+
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
-  throw lastErr;
+}
+
+function jsonResponse(
+  data: unknown,
+  status: number,
+  corsHeaders: Record<string, string>
+): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json; charset=utf-8'
+    }
+  });
+}
+
+function cleanBase64(value: string): string {
+  const commaIndex = value.indexOf(',');
+  return (
+    commaIndex >= 0 ? value.slice(commaIndex + 1) : value
+  ).trim();
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: any): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env
+  ): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
     };
 
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders
+      });
     }
 
     if (!env.GEMINI_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: 'GEMINI_API_KEY environment secret is not configured on Cloudflare Worker.' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      return jsonResponse(
+        {
+          error:
+            'GEMINI_API_KEY environment secret is not configured on this Cloudflare Worker.'
+        },
+        500,
+        corsHeaders
       );
     }
 
-    const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+    if (request.method !== 'POST') {
+      return jsonResponse(
+        { status: 'SpeechCraft Studio Cloudflare Worker API active' },
+        200,
+        corsHeaders
+      );
+    }
+
+    let body: any;
 
     try {
-      if (request.method !== 'POST') {
-        return new Response(JSON.stringify({ status: 'SpeechCraft Studio Cloudflare Worker API active' }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+      body = await request.json();
+    } catch {
+      return jsonResponse(
+        { error: 'Request body must be valid JSON.' },
+        400,
+        corsHeaders
+      );
+    }
 
-      const body: any = await request.json().catch(() => ({}));
-      const requestedModel = body.selectedGeminiModel || body.selectedModel || body.model;
-      const primaryModel = resolveApiModelId(requestedModel);
+    let model: string;
 
+    try {
+      model = resolveApiModelId(
+        body.selectedGeminiModel ||
+        body.selectedModel ||
+        body.model
+      );
+    } catch (error: any) {
+      return jsonResponse(
+        { error: getErrorMessage(error) },
+        400,
+        corsHeaders
+      );
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: env.GEMINI_API_KEY
+    });
+
+    try {
+      // Speech analysis
       if (path === '/api/analyze-speech') {
         const {
           audioBase64,
@@ -93,199 +202,304 @@ export default {
           targetText = '',
           context = '',
           learnerGoals = [],
-          targetAccent = 'General American English',
+          targetAccent = 'General American English'
         } = body;
 
-        if (!audioBase64) {
-          return new Response(JSON.stringify({ error: 'Missing audio data' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+        if (
+          typeof audioBase64 !== 'string' ||
+          !audioBase64.trim()
+        ) {
+          return jsonResponse(
+            { error: 'Missing audio data' },
+            400,
+            corsHeaders
+          );
         }
 
-        const audioBuffer = Buffer.from(audioBase64, 'base64');
-        const systemInstruction = `You are a world-class speech and dialect coach specializing in General American English (GenAm), articulation, natural rhythm, and executive verbal presence. Analyze the learner's actual spoken audio recording. Provide a STRICT VERBATIM transcription and detailed pronunciation/fluency analysis in JSON format.`;
-
-        const response = await callGeminiWithRetryAndFallback(ai, primaryModel, async (modelToUse) => {
-          return await ai.models.generateContent({
-            model: modelToUse,
-            contents: [
+        const response = await generateWithRetry(ai, {
+          model,
+          contents: [{
+            role: 'user',
+            parts: [
               {
-                role: 'user',
-                parts: [
-                  {
-                    inlineData: {
-                      data: audioBase64,
-                      mimeType: mimeType || 'audio/webm',
-                    },
-                  },
-                  {
-                    text: `Analyze this spoken audio.\nExercise Type: ${exerciseType}\nTarget Accent: ${targetAccent}\n${targetText ? `Target Script: "${targetText}"` : ''}\n${context ? `Context: ${context}` : ''}`,
-                  },
-                ],
+                inlineData: {
+                  mimeType:
+                    String(mimeType).split(';')[0] ||
+                    'audio/webm',
+                  data: cleanBase64(audioBase64)
+                }
               },
-            ],
-            config: {
-              systemInstruction,
-              responseMimeType: 'application/json',
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  transcript: { type: Type.STRING },
-                  summary: { type: Type.STRING },
-                  scores: {
+              {
+                text: `Analyze this spoken audio.
+
+Exercise Type: ${exerciseType}
+Target Accent: ${targetAccent}
+${targetText ? `Target Script: "${targetText}"` : ''}
+${context ? `Context: ${context}` : ''}
+${
+  Array.isArray(learnerGoals) && learnerGoals.length
+    ? `Learner Goals: ${learnerGoals.join(', ')}`
+    : ''
+}
+
+Return strict JSON containing:
+- transcript: verbatim transcript
+- summary: concise assessment
+- scores: overall, pronunciation, fluency, pacing, intonation (0-100)
+- phonemeFeedback: array of objects with phoneme, status, comment
+- actionableTips: array of strings
+
+Analyze only what is audible. Do not invent speech.`
+              }
+            ]
+          }],
+          config: {
+            systemInstruction:
+              'You are an expert American English speech coach. Analyze only the supplied recording and return valid JSON.',
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                transcript: { type: Type.STRING },
+                summary: { type: Type.STRING },
+                scores: {
+                  type: Type.OBJECT,
+                  properties: {
+                    overall: { type: Type.NUMBER },
+                    pronunciation: { type: Type.NUMBER },
+                    fluency: { type: Type.NUMBER },
+                    pacing: { type: Type.NUMBER },
+                    intonation: { type: Type.NUMBER }
+                  },
+                  required: [
+                    'overall',
+                    'pronunciation',
+                    'fluency',
+                    'pacing',
+                    'intonation'
+                  ]
+                },
+                phonemeFeedback: {
+                  type: Type.ARRAY,
+                  items: {
                     type: Type.OBJECT,
                     properties: {
-                      overall: { type: Type.NUMBER },
-                      pronunciation: { type: Type.NUMBER },
-                      fluency: { type: Type.NUMBER },
-                      pacing: { type: Type.NUMBER },
-                      intonation: { type: Type.NUMBER },
+                      phoneme: { type: Type.STRING },
+                      status: { type: Type.STRING },
+                      comment: { type: Type.STRING }
                     },
-                  },
-                  phonemeFeedback: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        phoneme: { type: Type.STRING },
-                        status: { type: Type.STRING },
-                        comment: { type: Type.STRING },
-                      },
-                    },
-                  },
-                  actionableTips: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
-                  },
+                    required: [
+                      'phoneme',
+                      'status',
+                      'comment'
+                    ]
+                  }
                 },
+                actionableTips: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING }
+                }
               },
-            },
-          });
-        });
-
-        const rawText = response.text ? response.text() : '{}';
-        let jsonResult;
-        try {
-          jsonResult = JSON.parse(rawText);
-        } catch {
-          jsonResult = { summary: rawText, scores: { overall: 85, pronunciation: 85, fluency: 85, pacing: 85, intonation: 85 } };
-        }
-
-        return new Response(JSON.stringify(jsonResult), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      if (path === '/api/tts-reference') {
-        const { text } = body;
-        if (!text) {
-          return new Response(JSON.stringify({ error: 'Missing text' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        const response = await callGeminiWithRetryAndFallback(ai, primaryModel, async (modelToUse) => {
-          return await ai.models.generateContent({
-            model: modelToUse,
-            contents: [{ role: 'user', parts: [{ text: `Generate spoken phonetic audio reference for: "${text}"` }] }],
-          });
-        });
-
-        let audioData: string | null = null;
-        const candidates = response.candidates || [];
-        for (const candidate of candidates) {
-          for (const part of candidate.content?.parts || []) {
-            if (part.inlineData?.data) {
-              audioData = part.inlineData.data;
-              break;
+              required: [
+                'transcript',
+                'summary',
+                'scores',
+                'phonemeFeedback',
+                'actionableTips'
+              ]
             }
           }
-          if (audioData) break;
-        }
-
-        if (!audioData) {
-          return new Response(JSON.stringify({ fallback: true }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        return new Response(JSON.stringify({ audioBase64: audioData, mimeType: 'audio/wav' }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+
+        const rawText = response.text || '{}';
+
+        try {
+          return jsonResponse(
+            JSON.parse(rawText),
+            200,
+            corsHeaders
+          );
+        } catch {
+          return jsonResponse(
+            {
+              error: 'Gemini returned invalid JSON.',
+              details: rawText
+            },
+            502,
+            corsHeaders
+          );
+        }
       }
 
+      // TTS is not implemented by ordinary text generation.
+      if (path === '/api/tts-reference') {
+        const { text } = body;
+
+        if (typeof text !== 'string' || !text.trim()) {
+          return jsonResponse(
+            { error: 'Missing text' },
+            400,
+            corsHeaders
+          );
+        }
+
+        return jsonResponse(
+          {
+            fallback: true,
+            message:
+              'Text-to-speech audio generation is not configured on this Worker.'
+          },
+          501,
+          corsHeaders
+        );
+      }
+
+      // Conversation practice
       if (path === '/api/conversation-reply') {
         const { messages, scenario, persona } = body;
-        const promptText = `Conversation simulator. Scenario: ${scenario?.title || 'Casual'}. Persona: ${persona?.name || 'Partner'}.\nTranscript so far:\n${JSON.stringify(messages || [])}`;
 
-        const response = await callGeminiWithRetryAndFallback(ai, primaryModel, async (modelToUse) => {
-          return await ai.models.generateContent({
-            model: modelToUse,
-            contents: [{ role: 'user', parts: [{ text: promptText }] }],
-            config: { responseMimeType: 'application/json' },
-          });
+        const promptText = `You are an American English conversation partner and speaking coach.
+
+Scenario: ${scenario?.title || 'Casual'}
+Scenario details: ${
+  scenario?.prompt || scenario?.description || ''
+}
+Persona: ${persona?.name || 'Partner'}
+
+Conversation so far:
+${JSON.stringify(Array.isArray(messages) ? messages : [])}
+
+Return JSON with:
+- reply: a natural conversational response
+- coachingFeedback: an array of concise feedback strings
+- suggestedNextQuestion: a question that continues the conversation.`;
+
+        const response = await generateWithRetry(ai, {
+          model,
+          contents: [{
+            role: 'user',
+            parts: [{ text: promptText }]
+          }],
+          config: {
+            systemInstruction:
+              'Be a natural American English conversation partner. Return valid JSON.',
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                reply: { type: Type.STRING },
+                coachingFeedback: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING }
+                },
+                suggestedNextQuestion: {
+                  type: Type.STRING
+                }
+              },
+              required: [
+                'reply',
+                'coachingFeedback',
+                'suggestedNextQuestion'
+              ]
+            }
+          }
         });
 
-        const replyText = response.text ? response.text() : '{"reply": "That is very interesting!"}';
-        let parsed;
+        const rawText = response.text || '{}';
+
         try {
-          parsed = JSON.parse(replyText);
+          return jsonResponse(
+            JSON.parse(rawText),
+            200,
+            corsHeaders
+          );
         } catch {
-          parsed = { reply: replyText };
+          return jsonResponse(
+            {
+              error: 'Gemini returned invalid JSON.',
+              details: rawText
+            },
+            502,
+            corsHeaders
+          );
         }
-
-        return new Response(JSON.stringify(parsed), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
       }
 
-      if (path === '/api/generate-vocab-lesson' || path === '/api/generate-root-enrichment' || path === '/api/generate-family-enrichment' || path === '/api/generate-compliment-collection' || path === '/api/generate-curriculum-lessons' || path === '/api/analyze-conversation-patterns') {
-        const promptText = body.prompt || JSON.stringify(body);
-        const response = await callGeminiWithRetryAndFallback(ai, primaryModel, async (modelToUse) => {
-          return await ai.models.generateContent({
-            model: modelToUse,
-            contents: [{ role: 'user', parts: [{ text: promptText }] }],
-            config: { responseMimeType: 'application/json' },
-          });
+      // AI lesson and enrichment endpoints
+      const supportedPaths = new Set([
+        '/api/generate-vocab-lesson',
+        '/api/generate-root-enrichment',
+        '/api/generate-family-enrichment',
+        '/api/generate-compliment-collection',
+        '/api/generate-curriculum-lessons',
+        '/api/analyze-conversation-patterns'
+      ]);
+
+      if (supportedPaths.has(path)) {
+        const promptText =
+          typeof body.prompt === 'string' &&
+          body.prompt.trim()
+            ? body.prompt
+            : `Generate the requested structured response for endpoint ${path} using this request data:\n${JSON.stringify(body)}`;
+
+        const response = await generateWithRetry(ai, {
+          model,
+          contents: [{
+            role: 'user',
+            parts: [{ text: promptText }]
+          }],
+          config: {
+            systemInstruction:
+              'Follow the request carefully. Return valid JSON only, without Markdown fences.',
+            responseMimeType: 'application/json'
+          }
         });
 
-        const resText = response.text ? response.text() : '{}';
-        let parsed;
+        const rawText = response.text || '{}';
+
         try {
-          parsed = JSON.parse(resText);
+          return jsonResponse(
+            JSON.parse(rawText),
+            200,
+            corsHeaders
+          );
         } catch {
-          parsed = { result: resText };
+          return jsonResponse(
+            {
+              error: 'Gemini returned invalid JSON.',
+              details: rawText
+            },
+            502,
+            corsHeaders
+          );
         }
-
-        return new Response(JSON.stringify(parsed), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
       }
 
-      return new Response(JSON.stringify({ error: `Not Found: ${path}` }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      return jsonResponse(
+        { error: `Not Found: ${path}` },
+        404,
+        corsHeaders
+      );
+    } catch (error: any) {
+      const status = getErrorStatus(error);
+      const message = getErrorMessage(error);
+
+      console.error('[SPEECHCRAFT GEMINI ERROR]', {
+        path,
+        model,
+        status,
+        message
       });
 
-    } catch (err: any) {
-      console.error('[WORKER ERROR]', err);
-      return new Response(
-        JSON.stringify({
-          error: {
-            code: 503,
-            message: err?.message || 'Service temporarily unavailable. Please try again.',
-            status: 'UNAVAILABLE',
-          },
-        }),
-        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      return jsonResponse(
+        {
+          error: message,
+          status,
+          model
+        },
+        status,
+        corsHeaders
       );
     }
-  },
+  }
 };
