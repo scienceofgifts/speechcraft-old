@@ -8,7 +8,7 @@ import {
 } from '../types/speech';
 import { VOCABULARY_ITEMS } from '../data/vocabularyData';
 
-import { DEFAULT_GEMINI_MODEL_ID } from '../config/modelConfig';
+import { DEFAULT_GEMINI_MODEL_ID, getModelConfig } from '../config/modelConfig';
 
 const PROFILE_KEY = 'speechcraft_profile';
 const SESSIONS_KEY = 'speechcraft_sessions';
@@ -44,8 +44,8 @@ export function getStoredProfile(): LearnerProfile {
     return {
       ...DEFAULT_PROFILE,
       ...parsed,
-      // Apply safe migration: only default when no model preference exists
-      selectedGeminiModel: parsed.selectedGeminiModel || DEFAULT_GEMINI_MODEL_ID,
+      // Migrate old/unknown saved model IDs to a currently supported model.
+      selectedGeminiModel: getModelConfig(parsed.selectedGeminiModel).id || DEFAULT_GEMINI_MODEL_ID,
     };
   } catch (e) {
     console.error('Failed to read profile from storage:', e);

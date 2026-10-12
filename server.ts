@@ -393,13 +393,13 @@ app.post('/api/tts-reference', async (req, res) => {
     let response: any;
     try {
       response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: [{ role: 'user', parts: [{ text: promptMessage }] }],
       });
     } catch (primaryError: any) {
-      console.log(`[SERVER LOG] gemini-2.5-flash busy/rate-limited. Trying gemini-2.0-flash...`);
+      console.log(`[SERVER LOG] gemini-3.8-flash request failed. Trying gemini-3.5-flash-lite...`);
       response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.5-flash-lite',
         contents: [{ role: 'user', parts: [{ text: promptMessage }] }],
       });
     }

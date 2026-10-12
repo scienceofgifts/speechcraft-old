@@ -1,8 +1,6 @@
 /**
- * Centralized Gemini Model Configuration for SpeechCraft Studio
- *
- * Defines display names, actual verified Gemini API model IDs,
- * availability status, supported multimodal capabilities, and default settings.
+ * Centralized Gemini Model Configuration for SpeechCraft Studio.
+ * Keep these IDs aligned with Google's current Gemini API model catalogue.
  */
 
 export interface ModelCapability {
@@ -13,135 +11,80 @@ export interface ModelCapability {
 }
 
 export interface GeminiModelOption {
-  id: string; // Internal key matching the dropdown options
+  id: string;
   displayName: string;
-  apiModelId: string; // Actual verified Gemini API model identifier
+  apiModelId: string;
   isDefault?: boolean;
   status: 'verified_available' | 'verified_unsupported_or_restricted' | 'unverified';
   description: string;
   capabilities: ModelCapability;
 }
 
+const standardCapabilities: ModelCapability = {
+  supportsAudioInput: true,
+  supportsStructuredJson: true,
+  supportsSystemInstruction: true,
+  notes: 'Model ID is listed in the current Gemini API model catalogue. Check project/API access if a request is rejected.',
+};
+
 export const GEMINI_FLASH_MODELS: GeminiModelOption[] = [
   {
-    id: 'gemini-2.5-flash',
-    displayName: 'Gemini 2.5 Flash',
-    apiModelId: 'gemini-2.5-flash',
+    id: 'gemini-3.5-flash-lite',
+    displayName: 'Gemini 3.5 Flash-Lite',
+    apiModelId: 'gemini-3.5-flash-lite',
     isDefault: true,
     status: 'verified_available',
-    description:
-      'Ultra-fast, cost-effective multimodal model optimized for real-time speech analysis, low-latency scoring, and high-frequency coaching turns.',
-    capabilities: {
-      supportsAudioInput: true,
-      supportsStructuredJson: true,
-      supportsSystemInstruction: true,
-      notes: 'Fully verified with multimodal audio input, structured JSON schemas, and fast response times (~1s).',
-    },
+    description: 'Fast, cost-effective model for frequent speech coaching turns and structured feedback.',
+    capabilities: { ...standardCapabilities },
   },
   {
-    id: 'gemini-2.0-flash',
-    displayName: 'Gemini 2.0 Flash',
-    apiModelId: 'gemini-2.0-flash',
+    id: 'gemini-3.8-flash',
+    displayName: 'Gemini 3.8 Flash',
+    apiModelId: 'gemini-3.8-flash',
     status: 'verified_available',
-    description:
-      'Next-generation multimodal reasoning model providing nuanced phonetic precision, deep conversational critique, and advanced syntactic feedback.',
-    capabilities: {
-      supportsAudioInput: true,
-      supportsStructuredJson: true,
-      supportsSystemInstruction: true,
-      notes: 'Fully verified for comprehensive speech diagnostics and detailed phonetic observations.',
-    },
+    description: 'Current flagship Flash model for stronger reasoning, detailed speech analysis, and complex coaching tasks.',
+    capabilities: { ...standardCapabilities },
   },
   {
-    id: 'gemini-1.5-flash',
-    displayName: 'Gemini 1.5 Flash',
-    apiModelId: 'gemini-1.5-flash',
+    id: 'gemini-3.6-flash',
+    displayName: 'Gemini 3.6 Flash',
+    apiModelId: 'gemini-3.6-flash',
     status: 'verified_available',
-    description:
-      'Balanced flash model combining strong cognitive audio comprehension with rapid conversational response generation.',
-    capabilities: {
-      supportsAudioInput: true,
-      supportsStructuredJson: true,
-      supportsSystemInstruction: true,
-      notes: 'Verified in API model catalog. Supports direct audio evaluation and structured schemas.',
-    },
+    description: 'Multimodal general-purpose model balancing speed and capability for speech analysis and conversation.',
+    capabilities: { ...standardCapabilities },
   },
   {
-    id: 'gemini-2.5-pro',
-    displayName: 'Gemini 2.5 Pro',
-    apiModelId: 'gemini-2.5-pro',
+    id: 'gemini-3.1-flash-lite',
+    displayName: 'Gemini 3.1 Flash-Lite',
+    apiModelId: 'gemini-3.1-flash-lite',
     status: 'verified_available',
-    description:
-      'High-throughput multimodal flash model tuned for low latency and consistent structured feedback generation.',
-    capabilities: {
-      supportsAudioInput: true,
-      supportsStructuredJson: true,
-      supportsSystemInstruction: true,
-      notes: 'Verified in API model catalog. Supports direct audio input and schema-constrained output.',
-    },
-  },
-  {
-    id: 'gemini-1.5-pro',
-    displayName: 'Gemini 1.5 Pro',
-    apiModelId: 'gemini-1.5-pro',
-    status: 'verified_available',
-    description:
-      'Core General American conversational model delivering robust phonetic analysis, thought-group parsing, and comprehensive evaluation.',
-    capabilities: {
-      supportsAudioInput: true,
-      supportsStructuredJson: true,
-      supportsSystemInstruction: true,
-      notes: 'Fully verified for audio understanding, acoustic diagnostics, and dialogue coaching.',
-    },
-  },
-  {
-    id: 'gemini-1.5-flash-8b',
-    displayName: 'Gemini Flash 8B',
-    apiModelId: 'gemini-1.5-flash-8b',
-    status: 'verified_available',
-    description:
-      'Lightweight model for low-latency dialogue responses and fast lexical explanations.',
-    capabilities: {
-      supportsAudioInput: true,
-      supportsStructuredJson: true,
-      supportsSystemInstruction: true,
-      notes: 'Verified in API model catalog. Supports multimodal audio and dialogue coaching.',
-    },
+    description: 'Lightweight, cost-efficient model for high-volume routine coaching and feedback.',
+    capabilities: { ...standardCapabilities },
   },
 ];
 
-export const DEFAULT_GEMINI_MODEL_ID = 'gemini-2.5-flash';
+export const DEFAULT_GEMINI_MODEL_ID = 'gemini-3.5-flash-lite';
 
 export const SPECIALIZED_SERVICE_MODELS = {
   tts: {
-    primary: 'gemini-2.5-flash',
-    secondary: 'gemini-2.0-flash',
-    description:
-      'Specialized Gemini audio synthesis engine for generating authentic General American phonetic reference models.',
+    primary: 'gemini-3.8-flash-lite-tts',
+    secondary: 'gemini-3.8-flash-tts',
+    description: 'Dedicated Gemini text-to-speech models for reference audio generation.',
   },
   transcriptionBackup: {
-    model: 'gemini-2.5-flash',
-    description: 'Dedicated audio transcription model utilized if speech audio requires specialized transcription pre-processing.',
+    model: 'gemini-3.8-flash',
+    description: 'Current general-purpose Gemini model used for transcription-related fallback tasks.',
   },
 };
 
-/**
- * Returns model configuration by ID, or the default model if not found
- */
+/** Returns model configuration by ID, or the current default for stale/unknown saved IDs. */
 export function getModelConfig(modelId?: string): GeminiModelOption {
-  if (!modelId) {
-    return GEMINI_FLASH_MODELS[0];
-  }
-  const found = GEMINI_FLASH_MODELS.find(
-    (m) => m.id === modelId || m.apiModelId === modelId
-  );
+  if (!modelId) return GEMINI_FLASH_MODELS[0];
+  const found = GEMINI_FLASH_MODELS.find((model) => model.id === modelId || model.apiModelId === modelId);
   return found || GEMINI_FLASH_MODELS[0];
 }
 
-/**
- * Resolves verified API model ID for an input model ID or returns default
- */
+/** Resolves an allowed model ID. Stale saved IDs safely fall back to the current default. */
 export function resolveApiModelId(modelId?: string): string {
-  const config = getModelConfig(modelId);
-  return config.apiModelId;
+  return getModelConfig(modelId).apiModelId;
 }
