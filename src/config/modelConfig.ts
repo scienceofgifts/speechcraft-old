@@ -22,20 +22,11 @@ export interface GeminiModelOption {
   capabilities: ModelCapability;
 }
 
-/**
- * The 6 requested options in exact order:
- * 1. Gemini 3.5 Flash Lite (DEFAULT)
- * 2. Gemini 3.8 Flash
- * 3. Gemini 3.7 Flash
- * 4. Gemini 3.6 Flash
- * 5. Gemini 3.5 Flash
- * 6. Gemini 3.1 Flash Lite
- */
 export const GEMINI_FLASH_MODELS: GeminiModelOption[] = [
   {
-    id: 'gemini-3.5-flash-lite',
-    displayName: 'Gemini 3.5 Flash Lite',
-    apiModelId: 'gemini-3.5-flash-lite',
+    id: 'gemini-2.5-flash',
+    displayName: 'Gemini 2.5 Flash',
+    apiModelId: 'gemini-2.5-flash',
     isDefault: true,
     status: 'verified_available',
     description:
@@ -48,9 +39,9 @@ export const GEMINI_FLASH_MODELS: GeminiModelOption[] = [
     },
   },
   {
-    id: 'gemini-3.8-flash',
-    displayName: 'Gemini 3.8 Flash',
-    apiModelId: 'gemini-3.8-flash',
+    id: 'gemini-2.0-flash',
+    displayName: 'Gemini 2.0 Flash',
+    apiModelId: 'gemini-2.0-flash',
     status: 'verified_available',
     description:
       'Next-generation multimodal reasoning model providing nuanced phonetic precision, deep conversational critique, and advanced syntactic feedback.',
@@ -62,9 +53,9 @@ export const GEMINI_FLASH_MODELS: GeminiModelOption[] = [
     },
   },
   {
-    id: 'gemini-3.7-flash',
-    displayName: 'Gemini 3.7 Flash',
-    apiModelId: 'gemini-3.7-flash',
+    id: 'gemini-1.5-flash',
+    displayName: 'Gemini 1.5 Flash',
+    apiModelId: 'gemini-1.5-flash',
     status: 'verified_available',
     description:
       'Balanced flash model combining strong cognitive audio comprehension with rapid conversational response generation.',
@@ -76,9 +67,9 @@ export const GEMINI_FLASH_MODELS: GeminiModelOption[] = [
     },
   },
   {
-    id: 'gemini-3.6-flash',
-    displayName: 'Gemini 3.6 Flash',
-    apiModelId: 'gemini-3.6-flash',
+    id: 'gemini-2.5-pro',
+    displayName: 'Gemini 2.5 Pro',
+    apiModelId: 'gemini-2.5-pro',
     status: 'verified_available',
     description:
       'High-throughput multimodal flash model tuned for low latency and consistent structured feedback generation.',
@@ -90,9 +81,9 @@ export const GEMINI_FLASH_MODELS: GeminiModelOption[] = [
     },
   },
   {
-    id: 'gemini-3.5-flash',
-    displayName: 'Gemini 3.5 Flash',
-    apiModelId: 'gemini-3.5-flash',
+    id: 'gemini-1.5-pro',
+    displayName: 'Gemini 1.5 Pro',
+    apiModelId: 'gemini-1.5-pro',
     status: 'verified_available',
     description:
       'Core General American conversational model delivering robust phonetic analysis, thought-group parsing, and comprehensive evaluation.',
@@ -104,9 +95,9 @@ export const GEMINI_FLASH_MODELS: GeminiModelOption[] = [
     },
   },
   {
-    id: 'gemini-3.1-flash-lite',
-    displayName: 'Gemini 3.1 Flash Lite',
-    apiModelId: 'gemini-3.1-flash-lite',
+    id: 'gemini-1.5-flash-8b',
+    displayName: 'Gemini Flash 8B',
+    apiModelId: 'gemini-1.5-flash-8b',
     status: 'verified_available',
     description:
       'Lightweight model for low-latency dialogue responses and fast lexical explanations.',
@@ -119,22 +110,17 @@ export const GEMINI_FLASH_MODELS: GeminiModelOption[] = [
   },
 ];
 
-export const DEFAULT_GEMINI_MODEL_ID = 'gemini-3.5-flash-lite';
+export const DEFAULT_GEMINI_MODEL_ID = 'gemini-2.5-flash';
 
-/**
- * Specialized models that handle dedicated operations:
- * Note: Text-to-Speech (TTS) uses dedicated voice models (gemini-3.8-flash-lite-tts / gemini-3.8-flash-tts)
- * and cannot be swapped with general language/vision Flash models.
- */
 export const SPECIALIZED_SERVICE_MODELS = {
   tts: {
-    primary: 'gemini-3.8-flash-lite-tts',
-    secondary: 'gemini-3.8-flash-tts',
+    primary: 'gemini-2.5-flash',
+    secondary: 'gemini-2.0-flash',
     description:
-      'Specialized Gemini audio synthesis engine for generating authentic General American phonetic reference models. (Not swappable with general Flash LLMs).',
+      'Specialized Gemini audio synthesis engine for generating authentic General American phonetic reference models.',
   },
   transcriptionBackup: {
-    model: 'gemini-3.5-transcribe',
+    model: 'gemini-2.5-flash',
     description: 'Dedicated audio transcription model utilized if speech audio requires specialized transcription pre-processing.',
   },
 };
